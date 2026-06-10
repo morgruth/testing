@@ -2,27 +2,33 @@
 
 WORKSPACE_DIR="/workspaces/testing"
 CGI_DIR="$WORKSPACE_DIR/cgi-bin"
+TORRC="/etc/tor/torrc"
+HS_DIR="/var/lib/tor/workspace_onion/"
 
 echo "[+] Updating apt and installing dependencies..."
 sudo apt-get update && sudo apt-get install -y tor python3 php-cgi php-sqlite3
 
-# 1. Configure Tor Hidden Service
-echo "[+] Configuring Tor Hidden Service..."
-TORRC="/etc/tor/torrc"
-HS_DIR="/var/lib/tor/workspace_onion/"
-
-# Append Tor configurations safely using sudo
+# 1. Configure Tor Hidden Service Configuration Lines
+echo "[+] Configuring Tor Hidden Service inside /etc/tor/torrc..."
 if ! sudo grep -q "workspace_onion" "$TORRC"; then
     echo -e "\nHiddenServiceDir $HS_DIR" | sudo tee -a "$TORRC" > /dev/null
     echo "HiddenServicePort 80 127.0.0.1:8080" | sudo tee -a "$TORRC" > /dev/null
 fi
 
-# Restart Tor daemon to generate the address
-sudo systemctl restart tor
-echo "[+] Waiting for Tor to generate keys..."
-sleep 4
+# 2. Build and Secure the Hidden Service Directory (Container Fix)
+echo "[+] Instantiating and locking down Tor cryptographic directories..."
+sudo mkdir -p "$HS_DIR"
+sudo chown -R debian-tor:debian-tor "$HS_DIR"
+sudo chmod 700 "$HS_DIR"
 
-# Print Onion URL
+# 3. Start Tor Using Container-Friendly Service Manager
+echo "[+] Starting Tor network daemon via container service manager..."
+sudo service tor restart
+
+echo "[+] Waiting 5 seconds for Tor to establish circuits and generate keys..."
+sleep 5
+
+# 4. Print Onion URL
 if sudo test -f "${HS_DIR}hostname"; then
     ONION_URL=$(sudo cat "${HS_DIR}hostname")
     echo "===================================================="
@@ -30,17 +36,29 @@ if sudo test -f "${HS_DIR}hostname"; then
     echo "    http://$ONION_URL"
     echo "===================================================="
 else
-    echo "[-] Error: Tor hostname file not found. Check 'sudo journalctl -u tor'"
+    echo "[-] Error: Tor hostname file not found."
+    echo "[*] Attempting manual direct-binary Tor fallback start..."
+    sudo tor &
+    sleep 5
+    if sudo test -f "${HS_DIR}hostname"; then
+        ONION_URL=$(sudo cat "${HS_DIR}hostname")
+        echo "===================================================="
+        echo "[*] SUCCESS (Fallback)! Your Hidden Service URL is:"
+        echo "    http://$ONION_URL"
+        echo "===================================================="
+    else
+        echo "[-] Critical: Failed to generate Onion keys. Check system logs."
+    fi
 fi
 
-# 2. Build local Workspace Directories
+# 5. Build Local Workspace Directories
 echo "[+] Setting up local workspace directories..."
 mkdir -p "$CGI_DIR"
 
-# 3. Create the PHP Script
+# 6. Create the PHP Script with Custom Database Relative Mapping
 echo "[+] Creating cgi-bin/index.php..."
 cat << 'EOF' > "$CGI_DIR/index.php"
-#!/usr/bin/usr/env php-cgi
+#!/usr/bin/env php-cgi
 <?php
 // Mandatory CGI Header
 echo "Content-Type: text/html\r\n\r\n";
@@ -57,10 +75,12 @@ try {
 
     $count = $db->query("SELECT COUNT(*) FROM visits")->fetchColumn();
 
-    echo "<html><head><title>Workspace Hidden Service</title></head><body style='font-family:sans-serif;'>";
+    echo "<html><head><title>Workspace Hidden Service</title></head><body style='font-family:sans-serif; background:#f4f4f4; padding:40px;'>";
+    echo "<div style='background:white; padding:20px; border-radius:8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width:500px; margin:0 auto;'>";
     echo "<h1>Hello from /workspaces/testing!</h1>";
-    echo "<p>SQLite Visit Count: <strong>" . htmlspecialchars($count) . "</strong></p>";
-    echo "</body></html>";
+    echo "<p>Your clean URL routing layer is active.</p>";
+    echo "<p>SQLite Visit Count: <strong style='color:#007bff;'>" . htmlspecialchars($count) . "</strong></p>";
+    echo "</div></body></html>";
 
 } catch (PDOException $e) {
     echo "Database error: " . htmlspecialchars($e->getMessage());
@@ -71,24 +91,34 @@ EOF
 # Ensure PHP file can execute as a script
 chmod +x "$CGI_DIR/index.php"
 
-# 4. Create Python CGI Server Launcher
+# 7. Create Python Clean-URL Server Launcher
 echo "[+] Creating server.py..."
 cat << 'EOF' > "$WORKSPACE_DIR/server.py"
 import http.server
 import os
+import sys
 
-class CustomCGIHandler(http.server.CGIHTTPRequestHandler):
-    def setup(self):
-        super().setup()
+class CleanURLCGIHandler(http.server.CGIHTTPRequestHandler):
+    def translate_path(self, path):
+        """Intercepts clean routing URLs and maps them internally to the CGI structure."""
+        if path == '/' or path == '/index.php':
+            path = '/cgi-bin/index.php'
+        return super().translate_path(path)
+
+    def is_cgi(self):
+        """Forces Python to treat our rewritten paths as executable scripts."""
+        if "cgi-bin" in self.path or self.path == '/' or self.path == '/index.php':
+            return True
+        return super().is_cgi()
 
 # Lock server execution inside your exact workspace
 os.chdir('/workspaces/testing')
 
 server_address = ('127.0.0.1', 8080)
-httpd = http.server.HTTPServer(server_address, CustomCGIHandler)
+httpd = http.server.HTTPServer(server_address, CleanURLCGIHandler)
 
-print("[+] Local Python CGI Server running on http://127.0.0.1:8080")
-print("[+] Access via Tor browser at your .onion URL")
+print("[+] Local Python CGI Router running on http://127.0.0.1:8080")
+print("[+] Clean URL Mapping Enabled: '/' -> '/cgi-bin/index.php'")
 print("[-] Press Ctrl+C to terminate.")
 
 try:
@@ -96,11 +126,12 @@ try:
 except KeyboardInterrupt:
     print("\n[-] Shutting down server.")
     httpd.server_close()
+    sys.exit(0)
 EOF
 
-echo "[+] Setup complete."
-echo "[+] To run the server manually later, run: python3 server.py"
+echo "[+] Setup execution completed."
+echo "[+] Launching your web routing stack now..."
 echo "----------------------------------------------------"
 
-# 5. Execute server right away
+# 8. Execute Clean URL Python Server
 python3 "$WORKSPACE_DIR/server.py"

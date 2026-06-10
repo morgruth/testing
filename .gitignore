@@ -1,3 +1,11 @@
+# pgp keys
+redbox_sir
+# GPG Security Files
+/home/codespace/.gnupg/pubring.kbx
+revoke.asc
+*.asc
+*.key
+*.gpg
 # === Tor Service State & Identity Data ===
 # Never commit your private keys or generated onion addresses
 var/

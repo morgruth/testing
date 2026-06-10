@@ -1,0 +1,29 @@
+# === Tor Service State & Identity Data ===
+# Never commit your private keys or generated onion addresses
+var/
+/lib/tor/
+hostname
+private_key
+
+# === App Databases & Storage ===
+# Blocks the active SQLite testing database file
+*.sqlite
+*.sqlite3
+*.db
+
+# === Application Logs ===
+# Excludes crash data, web logging dumps, and system output tracking
+*.log
+logs/
+
+# === Python & System Caches ===
+# Clears compilation files generated when running server.py
+__pycache__/
+*.pyc
+*.pyo
+.pypirc
+
+# === OS & IDE Artifacts ===
+.DS_Store
+.env
+.local/

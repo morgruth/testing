@@ -7,5 +7,9 @@ User-agent: googlebot-mobile
 Disallow: 
 User-agent: *
 Disallow: 
+Crawl-delay: 5
 Disallow: /
+Disallow: grp59.com
+Sitemap: grp59.com
 Disallow: torlink.onion #example
+Sitemap: torlink.onion #example

@@ -6,6 +6,9 @@ revoke.asc
 *.asc
 *.key
 *.gpg
+
+# never commit the .ssh
+.shh
 # === Tor Service State & Identity Data ===
 # Never commit your private keys or generated onion addresses
 var/
@@ -35,3 +38,10 @@ __pycache__/
 .DS_Store
 .env
 .local/
+
+#ignore configs *.txt, test*.sh README.md
+README.md
+?
+testbashcom.sh
+tenlet
+Robots*.txt
